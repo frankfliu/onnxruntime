@@ -22,6 +22,9 @@ struct DimensionValueBuilder;
 struct TensorTypeAndShape;
 struct TensorTypeAndShapeBuilder;
 
+struct MapType;
+struct MapTypeBuilder;
+
 struct EdgeEnd;
 
 struct NodeEdge;
@@ -267,29 +270,35 @@ inline const char *EnumNameNodeType(NodeType e) {
 enum TypeInfoValue {
   TypeInfoValue_NONE = 0,
   TypeInfoValue_tensor_type = 1,
+  TypeInfoValue_sequence_type = 2,
+  TypeInfoValue_map_type = 3,
   TypeInfoValue_MIN = TypeInfoValue_NONE,
-  TypeInfoValue_MAX = TypeInfoValue_tensor_type
+  TypeInfoValue_MAX = TypeInfoValue_map_type
 };
 
-inline const TypeInfoValue (&EnumValuesTypeInfoValue())[2] {
+inline const TypeInfoValue (&EnumValuesTypeInfoValue())[4] {
   static const TypeInfoValue values[] = {
     TypeInfoValue_NONE,
-    TypeInfoValue_tensor_type
+    TypeInfoValue_tensor_type,
+    TypeInfoValue_sequence_type,
+    TypeInfoValue_map_type
   };
   return values;
 }
 
 inline const char * const *EnumNamesTypeInfoValue() {
-  static const char * const names[3] = {
+  static const char * const names[5] = {
     "NONE",
     "tensor_type",
+    "sequence_type",
+    "map_type",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNameTypeInfoValue(TypeInfoValue e) {
-  if (flatbuffers::IsOutRange(e, TypeInfoValue_NONE, TypeInfoValue_tensor_type)) return "";
+  if (flatbuffers::IsOutRange(e, TypeInfoValue_NONE, TypeInfoValue_map_type)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesTypeInfoValue()[index];
 }
@@ -300,6 +309,14 @@ template<typename T> struct TypeInfoValueTraits {
 
 template<> struct TypeInfoValueTraits<onnxruntime::experimental::fbs::TensorTypeAndShape> {
   static const TypeInfoValue enum_value = TypeInfoValue_tensor_type;
+};
+
+template<> struct TypeInfoValueTraits<onnxruntime::experimental::fbs::TypeInfo> {
+  static const TypeInfoValue enum_value = TypeInfoValue_sequence_type;
+};
+
+template<> struct TypeInfoValueTraits<onnxruntime::experimental::fbs::MapType> {
+  static const TypeInfoValue enum_value = TypeInfoValue_map_type;
 };
 
 bool VerifyTypeInfoValue(flatbuffers::Verifier &verifier, const void *obj, TypeInfoValue type);
@@ -574,6 +591,58 @@ inline flatbuffers::Offset<TensorTypeAndShape> CreateTensorTypeAndShape(
   TensorTypeAndShapeBuilder builder_(_fbb);
   builder_.add_shape(shape);
   builder_.add_elem_type(elem_type);
+  return builder_.Finish();
+}
+
+struct MapType FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
+  typedef MapTypeBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_KEY_TYPE = 4,
+    VT_VALUE_TYPE = 6
+  };
+  onnxruntime::experimental::fbs::TensorDataType key_type() const {
+    return static_cast<onnxruntime::experimental::fbs::TensorDataType>(GetField<int32_t>(VT_KEY_TYPE, 0));
+  }
+  const onnxruntime::experimental::fbs::TypeInfo *value_type() const {
+    return GetPointer<const onnxruntime::experimental::fbs::TypeInfo *>(VT_VALUE_TYPE);
+  }
+  bool Verify(flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<int32_t>(verifier, VT_KEY_TYPE) &&
+           VerifyOffset(verifier, VT_VALUE_TYPE) &&
+           verifier.VerifyTable(value_type()) &&
+           verifier.EndTable();
+  }
+};
+
+struct MapTypeBuilder {
+  typedef MapType Table;
+  flatbuffers::FlatBufferBuilder &fbb_;
+  flatbuffers::uoffset_t start_;
+  void add_key_type(onnxruntime::experimental::fbs::TensorDataType key_type) {
+    fbb_.AddElement<int32_t>(MapType::VT_KEY_TYPE, static_cast<int32_t>(key_type), 0);
+  }
+  void add_value_type(flatbuffers::Offset<onnxruntime::experimental::fbs::TypeInfo> value_type) {
+    fbb_.AddOffset(MapType::VT_VALUE_TYPE, value_type);
+  }
+  explicit MapTypeBuilder(flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  flatbuffers::Offset<MapType> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = flatbuffers::Offset<MapType>(end);
+    return o;
+  }
+};
+
+inline flatbuffers::Offset<MapType> CreateMapType(
+    flatbuffers::FlatBufferBuilder &_fbb,
+    onnxruntime::experimental::fbs::TensorDataType key_type = onnxruntime::experimental::fbs::TensorDataType_UNDEFINED,
+    flatbuffers::Offset<onnxruntime::experimental::fbs::TypeInfo> value_type = 0) {
+  MapTypeBuilder builder_(_fbb);
+  builder_.add_value_type(value_type);
+  builder_.add_key_type(key_type);
   return builder_.Finish();
 }
 
@@ -969,6 +1038,12 @@ struct TypeInfo FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   const onnxruntime::experimental::fbs::TensorTypeAndShape *value_as_tensor_type() const {
     return value_type() == onnxruntime::experimental::fbs::TypeInfoValue_tensor_type ? static_cast<const onnxruntime::experimental::fbs::TensorTypeAndShape *>(value()) : nullptr;
   }
+  const onnxruntime::experimental::fbs::TypeInfo *value_as_sequence_type() const {
+    return value_type() == onnxruntime::experimental::fbs::TypeInfoValue_sequence_type ? static_cast<const onnxruntime::experimental::fbs::TypeInfo *>(value()) : nullptr;
+  }
+  const onnxruntime::experimental::fbs::MapType *value_as_map_type() const {
+    return value_type() == onnxruntime::experimental::fbs::TypeInfoValue_map_type ? static_cast<const onnxruntime::experimental::fbs::MapType *>(value()) : nullptr;
+  }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyOffset(verifier, VT_DENOTATION) &&
@@ -982,6 +1057,14 @@ struct TypeInfo FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
 
 template<> inline const onnxruntime::experimental::fbs::TensorTypeAndShape *TypeInfo::value_as<onnxruntime::experimental::fbs::TensorTypeAndShape>() const {
   return value_as_tensor_type();
+}
+
+template<> inline const onnxruntime::experimental::fbs::TypeInfo *TypeInfo::value_as<onnxruntime::experimental::fbs::TypeInfo>() const {
+  return value_as_sequence_type();
+}
+
+template<> inline const onnxruntime::experimental::fbs::MapType *TypeInfo::value_as<onnxruntime::experimental::fbs::MapType>() const {
+  return value_as_map_type();
 }
 
 struct TypeInfoBuilder {
@@ -2014,6 +2097,14 @@ inline bool VerifyTypeInfoValue(flatbuffers::Verifier &verifier, const void *obj
     }
     case TypeInfoValue_tensor_type: {
       auto ptr = reinterpret_cast<const onnxruntime::experimental::fbs::TensorTypeAndShape *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case TypeInfoValue_sequence_type: {
+      auto ptr = reinterpret_cast<const onnxruntime::experimental::fbs::TypeInfo *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case TypeInfoValue_map_type: {
+      auto ptr = reinterpret_cast<const onnxruntime::experimental::fbs::MapType *>(obj);
       return verifier.VerifyTable(ptr);
     }
     default: return true;
