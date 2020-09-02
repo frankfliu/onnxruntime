@@ -236,14 +236,19 @@ TEST(OrtModelOnlyTests, LoadOrtFormatModelMLOps) {
   feeds.insert(std::make_pair("input", ml_value));
 
   // prepare outputs
-  std::vector<std::string> output_names{"output_label"};
+  std::vector<std::string> output_names{"output_label", "output_probability"};
   std::vector<OrtValue> fetches;
 
   ASSERT_STATUS_OK(session_object.Run(feeds, output_names, &fetches));
 
-  const auto& output = fetches[0].Get<Tensor>();
-  ASSERT_TRUE(output.Shape().Size() == 1);
-  ASSERT_TRUE(output.Data<std::string>()[0] == "A");
+  const auto& output_1 = fetches[0].Get<Tensor>();
+  int64_t tensor_size = 3;
+  ASSERT_EQ( tensor_size, output_1.Shape().Size() );
+  const auto& output_1_data = output_1.Data<std::string>();
+  for (int64_t i = 0; i < tensor_size; i++)
+    ASSERT_TRUE(output_1_data[i] == "A");
+
+  // TODO verify the sequence outputs
 }
 
 }  // namespace test
