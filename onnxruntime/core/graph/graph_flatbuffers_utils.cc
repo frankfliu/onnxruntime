@@ -12,6 +12,13 @@ namespace onnxruntime {
 namespace experimental {
 namespace utils {
 
+static Status GetTypeInfoOrtFormat(flatbuffers::FlatBufferBuilder& builder,
+                                   const TypeProto& type_proto,
+                                   flatbuffers::Offset<fbs::TypeInfo>& fbs_type_info) ORT_MUST_USE_RESULT;
+
+static Status LoadTypeInfoOrtFormat(const fbs::TypeInfo& fbs_type_info,
+                                    TypeProto& type_proto) ORT_MUST_USE_RESULT;
+
 #if !defined(ORT_MINIMAL_BUILD)
 static flatbuffers::Offset<fbs::Dimension> GetTensorDimensionOrtFormat(
     flatbuffers::FlatBufferBuilder& builder,
@@ -42,6 +49,25 @@ static Status GetTensorShapeOrtFormat(flatbuffers::FlatBufferBuilder& builder,
   return Status::OK();
 }
 
+static Status GetSequenceTypeOrtFormat(flatbuffers::FlatBufferBuilder& builder,
+                                       const TypeProto_Sequence& sequence_type_proto,
+                                       flatbuffers::Offset<fbs::SequenceType>& fbs_sequence_type) {
+  flatbuffers::Offset<fbs::TypeInfo> fbs_type_info;
+  ORT_RETURN_IF_ERROR(GetTypeInfoOrtFormat(builder, sequence_type_proto.elem_type(), fbs_type_info));
+  fbs_sequence_type = fbs::CreateSequenceType(builder, fbs_type_info);
+  return Status::OK();
+}
+
+static Status GetMapTypeOrtFormat(flatbuffers::FlatBufferBuilder& builder,
+                                  const TypeProto_Map& map_type_proto,
+                                  flatbuffers::Offset<fbs::MapType>& fbs_map_type) {
+  flatbuffers::Offset<fbs::TypeInfo> fbs_type_info;
+  ORT_RETURN_IF_ERROR(GetTypeInfoOrtFormat(builder, map_type_proto.value_type(), fbs_type_info));
+  fbs_map_type = fbs::CreateMapType(
+      builder, static_cast<fbs::TensorDataType>(map_type_proto.key_type()), fbs_type_info);
+  return Status::OK();
+}
+
 static Status GetTensorTypeAndShapeOrtFormat(flatbuffers::FlatBufferBuilder& builder,
                                              const TypeProto_Tensor& tensor_type_proto,
                                              flatbuffers::Offset<fbs::TensorTypeAndShape>& fbs_tensor_type) {
@@ -64,12 +90,24 @@ static Status GetTypeInfoOrtFormat(flatbuffers::FlatBufferBuilder& builder,
   auto value_type = fbs::TypeInfoValue_tensor_type;
   flatbuffers::Offset<void> value;
   if (type_proto.has_tensor_type()) {
-    flatbuffers::Offset<fbs::TensorTypeAndShape> tensor_type;
+    flatbuffers::Offset<fbs::TensorTypeAndShape> fbs_tensor_type;
     ORT_RETURN_IF_ERROR(
-        GetTensorTypeAndShapeOrtFormat(builder, type_proto.tensor_type(), tensor_type));
-    value = tensor_type.Union();
+        GetTensorTypeAndShapeOrtFormat(builder, type_proto.tensor_type(), fbs_tensor_type));
+    value = fbs_tensor_type.Union();
+  } else if (type_proto.has_sequence_type()) {
+    value_type = fbs::TypeInfoValue_sequence_type;
+    flatbuffers::Offset<fbs::SequenceType> fbs_sequence_type;
+    ORT_RETURN_IF_ERROR(
+        GetSequenceTypeOrtFormat(builder, type_proto.sequence_type(), fbs_sequence_type));
+    value = fbs_sequence_type.Union();
+  } else if (type_proto.has_map_type()) {
+    value_type = fbs::TypeInfoValue_map_type;
+    flatbuffers::Offset<fbs::MapType> fbs_map_type;
+    ORT_RETURN_IF_ERROR(
+        GetMapTypeOrtFormat(builder, type_proto.map_type(), fbs_map_type));
+    value = fbs_map_type.Union();
   } else {
-    return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT, "We only support tensor type for now");
+    return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT, "We only support tensor/map/sequence type for now");
   }
 
   fbs::TypeInfoBuilder tb(builder);
@@ -301,6 +339,23 @@ static Status LoadTensorTypeAndShapeOrtFormat(const fbs::TensorTypeAndShape& fbs
   return Status::OK();
 }
 
+static Status LoadSequenceTypeOrtFormat(const fbs::SequenceType& fbs_sequence_type,
+                                        TypeProto_Sequence& sequence_type_proto) {
+  auto fbs_type_info = fbs_sequence_type.elem_type();
+  ORT_RETURN_IF(nullptr == fbs_type_info, "Null value type info in fbs::SequenceType. Invalid ORT format model.");
+  ORT_RETURN_IF_ERROR(LoadTypeInfoOrtFormat(*fbs_type_info, *sequence_type_proto.mutable_elem_type()));
+  return Status::OK();
+}
+
+static Status LoadMapTypeOrtFormat(const fbs::MapType& fbs_map_type,
+                                   TypeProto_Map& map_type_proto) {
+  map_type_proto.set_key_type(fbs_map_type.key_type());
+  auto fbs_type_info = fbs_map_type.value_type();
+  ORT_RETURN_IF(nullptr == fbs_type_info, "Null value type info in fbs::MapType. Invalid ORT format model.");
+  ORT_RETURN_IF_ERROR(LoadTypeInfoOrtFormat(*fbs_type_info, *map_type_proto.mutable_value_type()));
+  return Status::OK();
+}
+
 static Status LoadTypeInfoOrtFormat(const fbs::TypeInfo& fbs_type_info,
                                     TypeProto& type_proto) {
   LoadStringFromOrtFormat(*type_proto.mutable_denotation(), fbs_type_info.denotation());
@@ -309,8 +364,16 @@ static Status LoadTypeInfoOrtFormat(const fbs::TypeInfo& fbs_type_info,
     auto fbs_tensor_type = fbs_type_info.value_as_tensor_type();
     ORT_RETURN_IF(nullptr == fbs_tensor_type, "Null tensor type info. Invalid ORT format model.");
     ORT_RETURN_IF_ERROR(LoadTensorTypeAndShapeOrtFormat(*fbs_tensor_type, *type_proto.mutable_tensor_type()));
+  } else if (value_type == fbs::TypeInfoValue_sequence_type) {
+    auto fbs_sequence_type = fbs_type_info.value_as_sequence_type();
+    ORT_RETURN_IF(nullptr == fbs_sequence_type, "Null sequence type info. Invalid ORT format model.");
+    ORT_RETURN_IF_ERROR(LoadSequenceTypeOrtFormat(*fbs_sequence_type, *type_proto.mutable_sequence_type()));
+  } else if (value_type == fbs::TypeInfoValue_map_type) {
+    auto fbs_map_type = fbs_type_info.value_as_map_type();
+    ORT_RETURN_IF(nullptr == fbs_map_type, "Null map type info. Invalid ORT format model.");
+    ORT_RETURN_IF_ERROR(LoadMapTypeOrtFormat(*fbs_map_type, *type_proto.mutable_map_type()));
   } else {
-    // TODO: This may be required for traditional ML models.
+    // We do not support SparseTensor and Opaque for now
     return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT, "Type:", value_type, " is not supported currently");
   }
 
