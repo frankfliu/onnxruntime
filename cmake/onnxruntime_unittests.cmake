@@ -111,12 +111,12 @@ if(NOT onnxruntime_MINIMAL_BUILD AND NOT onnxruntime_REDUCED_OPS_BUILD)
     "${TEST_SRC_DIR}/ir/*.cc"
     "${TEST_SRC_DIR}/ir/*.h"
     )
- 
+
   file(GLOB onnxruntime_test_optimizer_src CONFIGURE_DEPENDS
     "${TEST_SRC_DIR}/optimizer/*.cc"
     "${TEST_SRC_DIR}/optimizer/*.h"
     )
- 
+
   set(onnxruntime_test_framework_src_patterns
     "${TEST_SRC_DIR}/framework/*.cc"
     "${TEST_SRC_DIR}/framework/*.h"
@@ -521,7 +521,12 @@ endif()
 onnxruntime_add_include_to_target(onnx_test_runner_common onnxruntime_common onnxruntime_framework
         onnxruntime_test_utils onnx onnx_proto re2::re2)
 
-add_dependencies(onnx_test_runner_common onnx_test_data_proto ${onnxruntime_EXTERNAL_DEPENDENCIES})
+add_dependencies(onnx_test_runner_common ${onnxruntime_EXTERNAL_DEPENDENCIES})
+
+if(NOT onnxruntime_MINIMAL_BUILD)
+  add_dependencies(onnx_test_runner_common onnx_test_data_proto)
+endif()
+
 target_include_directories(onnx_test_runner_common PRIVATE ${eigen_INCLUDE_DIRS} ${RE2_INCLUDE_DIR}
         ${CMAKE_CURRENT_BINARY_DIR} ${ONNXRUNTIME_ROOT})
 
@@ -559,12 +564,21 @@ set(all_dependencies ${onnxruntime_test_providers_dependencies} )
     list(APPEND onnxruntime_test_providers_libs Advapi32)
   endif()
 
-  AddTest(
-    TARGET onnxruntime_test_all
-    SOURCES ${all_tests}
-    LIBS onnx_test_runner_common ${onnxruntime_test_providers_libs}  ${onnxruntime_test_common_libs}  re2::re2 onnx_test_data_proto
-    DEPENDS ${all_dependencies}
-  )
+  if(NOT onnxruntime_MINIMAL_BUILD)
+    AddTest(
+      TARGET onnxruntime_test_all
+      SOURCES ${all_tests}
+      LIBS onnx_test_runner_common ${onnxruntime_test_providers_libs}  ${onnxruntime_test_common_libs}  re2::re2 onnx_test_data_proto
+      DEPENDS ${all_dependencies}
+    )
+  else()
+    AddTest(
+      TARGET onnxruntime_test_all
+      SOURCES ${all_tests}
+      LIBS onnx_test_runner_common ${onnxruntime_test_providers_libs}  ${onnxruntime_test_common_libs}  re2::re2
+      DEPENDS ${all_dependencies}
+    )
+  endif()
 
   # the default logger tests conflict with the need to have an overall default logger
   # so skip in this type of
@@ -640,28 +654,30 @@ if(WIN32)
   endif()
 endif()
 
-add_library(onnx_test_data_proto ${TEST_SRC_DIR}/proto/tml.proto)
-add_dependencies(onnx_test_data_proto onnx_proto ${onnxruntime_EXTERNAL_DEPENDENCIES})
-#onnx_proto target should mark this definition as public, instead of private
-target_compile_definitions(onnx_test_data_proto PRIVATE "-DONNX_API=")
-if(WIN32)
-  target_compile_options(onnx_test_data_proto PRIVATE "/wd4125" "/wd4456" "/wd4100" "/wd4267" "/wd6011" "/wd6387" "/wd28182")
-else()
-  if(HAS_UNUSED_PARAMETER)
-    target_compile_options(onnx_test_data_proto PRIVATE "-Wno-unused-parameter")
+if(NOT onnxruntime_MINIMAL_BUILD)
+  add_library(onnx_test_data_proto ${TEST_SRC_DIR}/proto/tml.proto)
+  add_dependencies(onnx_test_data_proto onnx_proto ${onnxruntime_EXTERNAL_DEPENDENCIES})
+  #onnx_proto target should mark this definition as public, instead of private
+  target_compile_definitions(onnx_test_data_proto PRIVATE "-DONNX_API=")
+  if(WIN32)
+    target_compile_options(onnx_test_data_proto PRIVATE "/wd4125" "/wd4456" "/wd4100" "/wd4267" "/wd6011" "/wd6387" "/wd28182")
+  else()
+    if(HAS_UNUSED_PARAMETER)
+      target_compile_options(onnx_test_data_proto PRIVATE "-Wno-unused-parameter")
+    endif()
+    if(HAS_UNUSED_VARIABLE)
+      target_compile_options(onnx_test_data_proto PRIVATE "-Wno-unused-variable")
+    endif()
+    if(HAS_UNUSED_BUT_SET_VARIABLE)
+      target_compile_options(onnx_test_data_proto PRIVATE "-Wno-unused-but-set-variable")
+    endif()
   endif()
-  if(HAS_UNUSED_VARIABLE)
-    target_compile_options(onnx_test_data_proto PRIVATE "-Wno-unused-variable")
-  endif()
-  if(HAS_UNUSED_BUT_SET_VARIABLE)
-    target_compile_options(onnx_test_data_proto PRIVATE "-Wno-unused-but-set-variable")
-  endif()
+  add_dependencies(onnx_test_data_proto onnx_proto ${onnxruntime_EXTERNAL_DEPENDENCIES})
+  onnxruntime_add_include_to_target(onnx_test_data_proto onnx_proto)
+  target_include_directories(onnx_test_data_proto PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  set_target_properties(onnx_test_data_proto PROPERTIES FOLDER "ONNXRuntimeTest")
+  onnxruntime_protobuf_generate(APPEND_PATH IMPORT_DIRS external/onnx TARGET onnx_test_data_proto)
 endif()
-add_dependencies(onnx_test_data_proto onnx_proto ${onnxruntime_EXTERNAL_DEPENDENCIES})
-onnxruntime_add_include_to_target(onnx_test_data_proto onnx_proto)
-target_include_directories(onnx_test_data_proto PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-set_target_properties(onnx_test_data_proto PROPERTIES FOLDER "ONNXRuntimeTest")
-onnxruntime_protobuf_generate(APPEND_PATH IMPORT_DIRS external/onnx TARGET onnx_test_data_proto)
 
 if(WIN32)
   set(wide_get_opt_src_dir ${TEST_SRC_DIR}/win_getopt/wide)
@@ -673,11 +689,18 @@ if(WIN32)
 endif()
 
 
-set(onnx_test_libs
-  onnxruntime_test_utils
-  ${ONNXRUNTIME_TEST_LIBS}
-  onnx_test_data_proto
-  ${onnxruntime_EXTERNAL_LIBRARIES})
+if(NOT onnxruntime_MINIMAL_BUILD)
+  set(onnx_test_libs
+    onnxruntime_test_utils
+    ${ONNXRUNTIME_TEST_LIBS}
+    onnx_test_data_proto
+    ${onnxruntime_EXTERNAL_LIBRARIES})
+else()
+  set(onnx_test_libs
+    onnxruntime_test_utils
+    ${ONNXRUNTIME_TEST_LIBS}
+    ${onnxruntime_EXTERNAL_LIBRARIES})
+endif()
 
 if (onnxruntime_ENABLE_LANGUAGE_INTEROP_OPS)
   list(APPEND onnx_test_libs onnxruntime_language_interop onnxruntime_pyop)
@@ -778,9 +801,16 @@ if (WIN32)
 endif()
 
 if (onnxruntime_BUILD_SHARED_LIB)
-  set(onnxruntime_perf_test_libs onnx_test_runner_common onnxruntime_test_utils  onnxruntime_common re2::re2
-          onnx_test_data_proto onnx_proto ${PROTOBUF_LIB} ${GETOPT_LIB_WIDE} onnxruntime ${SYS_PATH_LIB}
-          ${CMAKE_DL_LIBS})
+  if(NOT onnxruntime_MINIMAL_BUILD)
+    set(onnxruntime_perf_test_libs onnx_test_runner_common onnxruntime_test_utils  onnxruntime_common re2::re2
+            onnx_test_data_proto onnx_proto ${PROTOBUF_LIB} ${GETOPT_LIB_WIDE} onnxruntime ${SYS_PATH_LIB}
+            ${CMAKE_DL_LIBS})
+  else()
+    set(onnxruntime_perf_test_libs onnx_test_runner_common onnxruntime_test_utils  onnxruntime_common re2::re2
+            onnx_proto ${PROTOBUF_LIB} ${GETOPT_LIB_WIDE} onnxruntime ${SYS_PATH_LIB}
+            ${CMAKE_DL_LIBS})
+  endif()
+
   if(NOT WIN32)
     list(APPEND onnxruntime_perf_test_libs nsync_cpp)
   endif()

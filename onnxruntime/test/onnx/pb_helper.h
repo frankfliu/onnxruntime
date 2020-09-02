@@ -43,7 +43,11 @@
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <onnx/onnx_pb.h>
+
+#if !defined(ORT_MINIMAL_BUILD)
 #include "tml.pb.h"
+#endif
+
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
 #elif defined(_MSC_VER)

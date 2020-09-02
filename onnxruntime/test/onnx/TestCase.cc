@@ -37,6 +37,8 @@ const std::string TestModelInfo::unknown_version = "unknown version";
 namespace {
 template <typename T>
 ONNXTensorElementDataType NumericTypeToONNXType();
+
+#if !defined(ORT_MINIMAL_BUILD)
 template <>
 ONNXTensorElementDataType NumericTypeToONNXType<float>() {
   return ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
@@ -56,6 +58,7 @@ template <>
 ONNXTensorElementDataType NumericTypeToONNXType<std::string>() {
   return ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING;
 }
+#endif
 
 template <typename T>
 OrtValue* CreateTensorWithDataAsOrtValue(OrtMemoryInfo* info, std::vector<T>& input) {
@@ -176,6 +179,8 @@ static void SortTensorFileNames(std::vector<std::basic_string<PATH_CHAR_TYPE>>& 
   }
 }
 
+#if !defined(ORT_MINIMAL_BUILD)
+
 OrtValue* TensorToOrtValue(const ONNX_NAMESPACE::TensorProto& t, onnxruntime::test::HeapBuffer& b) {
   size_t len = 0;
   auto status = onnxruntime::test::GetSizeInBytesFromTensorProto<0>(t, &len);
@@ -197,6 +202,8 @@ OrtValue* TensorToOrtValue(const ONNX_NAMESPACE::TensorProto& t, onnxruntime::te
   return temp_value.release();
 }
 
+#endif
+
 void LoopDataFile(int test_data_pb_fd, bool is_input, const TestModelInfo& modelinfo,
                   std::unordered_map<std::string, OrtValue*>& name_data_map, onnxruntime::test::HeapBuffer& b,
                   std::ostringstream& oss) {
@@ -204,6 +211,7 @@ void LoopDataFile(int test_data_pb_fd, bool is_input, const TestModelInfo& model
   f.SetCloseOnDelete(true);
   google::protobuf::io::CodedInputStream coded_input(&f);
   bool clean_eof = false;
+#if !defined(ORT_MINIMAL_BUILD)
   int item_id = 1;
   for (proto::TraditionalMLData data;
        ParseDelimitedFromCodedStream(&data, &coded_input, &clean_eof);
@@ -277,6 +285,13 @@ void LoopDataFile(int test_data_pb_fd, bool is_input, const TestModelInfo& model
       });
     }
   }
+#else
+  ORT_UNUSED_PARAMETER(is_input);
+  ORT_UNUSED_PARAMETER(modelinfo);
+  ORT_UNUSED_PARAMETER(oss);
+  ORT_UNUSED_PARAMETER(name_data_map);
+  ORT_UNUSED_PARAMETER(b);
+#endif
   if (!clean_eof) {
     ORT_THROW("parse input file failed, has extra unparsed data");
   }
