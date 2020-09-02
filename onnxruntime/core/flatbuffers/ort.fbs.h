@@ -25,6 +25,9 @@ struct TensorTypeAndShapeBuilder;
 struct MapType;
 struct MapTypeBuilder;
 
+struct SequenceType;
+struct SequenceTypeBuilder;
+
 struct EdgeEnd;
 
 struct NodeEdge;
@@ -311,7 +314,7 @@ template<> struct TypeInfoValueTraits<onnxruntime::experimental::fbs::TensorType
   static const TypeInfoValue enum_value = TypeInfoValue_tensor_type;
 };
 
-template<> struct TypeInfoValueTraits<onnxruntime::experimental::fbs::TypeInfo> {
+template<> struct TypeInfoValueTraits<onnxruntime::experimental::fbs::SequenceType> {
   static const TypeInfoValue enum_value = TypeInfoValue_sequence_type;
 };
 
@@ -643,6 +646,48 @@ inline flatbuffers::Offset<MapType> CreateMapType(
   MapTypeBuilder builder_(_fbb);
   builder_.add_value_type(value_type);
   builder_.add_key_type(key_type);
+  return builder_.Finish();
+}
+
+struct SequenceType FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
+  typedef SequenceTypeBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_ELEM_TYPE = 4
+  };
+  const onnxruntime::experimental::fbs::TypeInfo *elem_type() const {
+    return GetPointer<const onnxruntime::experimental::fbs::TypeInfo *>(VT_ELEM_TYPE);
+  }
+  bool Verify(flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_ELEM_TYPE) &&
+           verifier.VerifyTable(elem_type()) &&
+           verifier.EndTable();
+  }
+};
+
+struct SequenceTypeBuilder {
+  typedef SequenceType Table;
+  flatbuffers::FlatBufferBuilder &fbb_;
+  flatbuffers::uoffset_t start_;
+  void add_elem_type(flatbuffers::Offset<onnxruntime::experimental::fbs::TypeInfo> elem_type) {
+    fbb_.AddOffset(SequenceType::VT_ELEM_TYPE, elem_type);
+  }
+  explicit SequenceTypeBuilder(flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  flatbuffers::Offset<SequenceType> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = flatbuffers::Offset<SequenceType>(end);
+    return o;
+  }
+};
+
+inline flatbuffers::Offset<SequenceType> CreateSequenceType(
+    flatbuffers::FlatBufferBuilder &_fbb,
+    flatbuffers::Offset<onnxruntime::experimental::fbs::TypeInfo> elem_type = 0) {
+  SequenceTypeBuilder builder_(_fbb);
+  builder_.add_elem_type(elem_type);
   return builder_.Finish();
 }
 
@@ -1038,8 +1083,8 @@ struct TypeInfo FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   const onnxruntime::experimental::fbs::TensorTypeAndShape *value_as_tensor_type() const {
     return value_type() == onnxruntime::experimental::fbs::TypeInfoValue_tensor_type ? static_cast<const onnxruntime::experimental::fbs::TensorTypeAndShape *>(value()) : nullptr;
   }
-  const onnxruntime::experimental::fbs::TypeInfo *value_as_sequence_type() const {
-    return value_type() == onnxruntime::experimental::fbs::TypeInfoValue_sequence_type ? static_cast<const onnxruntime::experimental::fbs::TypeInfo *>(value()) : nullptr;
+  const onnxruntime::experimental::fbs::SequenceType *value_as_sequence_type() const {
+    return value_type() == onnxruntime::experimental::fbs::TypeInfoValue_sequence_type ? static_cast<const onnxruntime::experimental::fbs::SequenceType *>(value()) : nullptr;
   }
   const onnxruntime::experimental::fbs::MapType *value_as_map_type() const {
     return value_type() == onnxruntime::experimental::fbs::TypeInfoValue_map_type ? static_cast<const onnxruntime::experimental::fbs::MapType *>(value()) : nullptr;
@@ -1059,7 +1104,7 @@ template<> inline const onnxruntime::experimental::fbs::TensorTypeAndShape *Type
   return value_as_tensor_type();
 }
 
-template<> inline const onnxruntime::experimental::fbs::TypeInfo *TypeInfo::value_as<onnxruntime::experimental::fbs::TypeInfo>() const {
+template<> inline const onnxruntime::experimental::fbs::SequenceType *TypeInfo::value_as<onnxruntime::experimental::fbs::SequenceType>() const {
   return value_as_sequence_type();
 }
 
@@ -2100,7 +2145,7 @@ inline bool VerifyTypeInfoValue(flatbuffers::Verifier &verifier, const void *obj
       return verifier.VerifyTable(ptr);
     }
     case TypeInfoValue_sequence_type: {
-      auto ptr = reinterpret_cast<const onnxruntime::experimental::fbs::TypeInfo *>(obj);
+      auto ptr = reinterpret_cast<const onnxruntime::experimental::fbs::SequenceType *>(obj);
       return verifier.VerifyTable(ptr);
     }
     case TypeInfoValue_map_type: {
