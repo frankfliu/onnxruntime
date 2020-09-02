@@ -219,5 +219,32 @@ TEST(OrtModelOnlyTests, LoadOrtFormatModel) {
   ASSERT_TRUE(output.Data<float>()[0] == 125.f);
 }
 
+// test that we can deserialize and run a previously saved ORT format model
+TEST(OrtModelOnlyTests, LoadOrtFormatModelMLOps) {
+  const auto model_filename = ORT_TSTR("sklearn_bin_voting_classifier_soft.ort");
+  SessionOptions so;
+  so.session_logid = "LoadOrtFormatModelMLOps";
+
+  InferenceSessionGetGraphWrapper session_object{so, GetEnvironment()};
+  ASSERT_STATUS_OK(session_object.Load(model_filename));  // infer type from filename
+  ASSERT_STATUS_OK(session_object.Initialize());
+
+  OrtValue ml_value;
+  CreateMLValue<float>(TestCPUExecutionProvider()->GetAllocator(0, OrtMemTypeDefault), {3, 2},
+                       {0.f, 1.f, 1.f, 1.f, 2.f, 0.f}, &ml_value);
+  NameMLValMap feeds;
+  feeds.insert(std::make_pair("input", ml_value));
+
+  // prepare outputs
+  std::vector<std::string> output_names{"output_label"};
+  std::vector<OrtValue> fetches;
+
+  ASSERT_STATUS_OK(session_object.Run(feeds, output_names, &fetches));
+
+  const auto& output = fetches[0].Get<Tensor>();
+  ASSERT_TRUE(output.Shape().Size() == 1);
+  ASSERT_TRUE(output.Data<std::string>()[0] == "A");
+}
+
 }  // namespace test
 }  // namespace onnxruntime
