@@ -707,7 +707,7 @@ if(NOT onnxruntime_MINIMAL_BUILD)
   set_target_properties(onnx PROPERTIES FOLDER "External/ONNX")
   set_target_properties(onnx_proto PROPERTIES FOLDER "External/ONNX")
 else()
-  include(external/onnx_minimal.cmake)
+  add_subdirectory(onnx)
 endif()
 
 if (onnxruntime_USE_MKLML)

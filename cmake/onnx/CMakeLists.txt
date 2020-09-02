@@ -14,7 +14,6 @@ add_library(onnx_proto ${ONNXRUNTIME_ROOT}/core/protobuf/onnx-ml.proto ${ONNXRUN
 target_include_directories(onnx_proto PUBLIC $<TARGET_PROPERTY:protobuf::libprotobuf,INTERFACE_INCLUDE_DIRECTORIES> "${CMAKE_CURRENT_BINARY_DIR}/..")
 target_compile_definitions(onnx_proto PUBLIC $<TARGET_PROPERTY:protobuf::libprotobuf,INTERFACE_COMPILE_DEFINITIONS>)
 onnxruntime_protobuf_generate(APPEND_PATH IMPORT_DIRS ${ONNXRUNTIME_ROOT}/core/protobuf TARGET onnx_proto)
-
 if (WIN32)
   target_compile_options(onnx_proto PRIVATE "/wd4146" "/wd4125" "/wd4456" "/wd4267" "/wd4309")
 else()
@@ -29,6 +28,8 @@ endif()
 
 set_target_properties(onnx_proto PROPERTIES FOLDER "External/ONNX")
 
+# Cpp Tests were added and they require googletest
+# since we have our own copy, try using that
 file(GLOB onnx_src CONFIGURE_DEPENDS
 "${ONNX_SOURCE_ROOT}/onnx/defs/data_type_utils.*"
 )
@@ -73,3 +74,4 @@ else()
 endif()
 
 set_target_properties(onnx PROPERTIES FOLDER "External/ONNX")
+
