@@ -204,8 +204,8 @@ void SaveAndCompareModels(const std::string& onnx_file, const std::basic_string<
 
 #if !defined(ORT_MINIMAL_BUILD)
 TEST(OrtModelOnlyTests, SerializeToOrtFormat) {
-  const std::basic_string<ORTCHAR_T> ort_file = ORT_TSTR("ort_github_issue_4031.onnx.ort");
-  SaveAndCompareModels("ort_github_issue_4031.onnx", ort_file);
+  const std::basic_string<ORTCHAR_T> ort_file = ORT_TSTR("testdata/ort_github_issue_4031.onnx.ort");
+  SaveAndCompareModels("testdata/ort_github_issue_4031.onnx", ort_file);
 
   OrtModelTestInfo test_info;
   test_info.model_filename = ort_file;
@@ -229,8 +229,8 @@ TEST(OrtModelOnlyTests, SerializeToOrtFormat) {
 }
 
 TEST(OrtModelOnlyTests, SerializeToOrtFormatMLOps) {
-  const std::basic_string<ORTCHAR_T> ort_file = ORT_TSTR("sklearn_bin_voting_classifier_soft.ort");
-  SaveAndCompareModels("sklearn_bin_voting_classifier_soft.onnx", ort_file);
+  const std::basic_string<ORTCHAR_T> ort_file = ORT_TSTR("testdata/sklearn_bin_voting_classifier_soft.ort");
+  SaveAndCompareModels("testdata/sklearn_bin_voting_classifier_soft.onnx", ort_file);
 
   OrtModelTestInfo test_info;
   test_info.model_filename = ort_file;
@@ -273,7 +273,7 @@ TEST(OrtModelOnlyTests, SerializeToOrtFormatMLOps) {
 // test that we can deserialize and run a previously saved ORT format model
 TEST(OrtModelOnlyTests, LoadOrtFormatModel) {
   OrtModelTestInfo test_info;
-  test_info.model_filename = ORT_TSTR("ort_github_issue_4031.onnx.ort");
+  test_info.model_filename = ORT_TSTR("testdata/ort_github_issue_4031.onnx.ort");
   test_info.logid = "LoadOrtFormatModel";
 
   OrtValue ml_value;
@@ -296,7 +296,7 @@ TEST(OrtModelOnlyTests, LoadOrtFormatModel) {
 // for a model with sequence and map outputs
 TEST(OrtModelOnlyTests, LoadOrtFormatModelMLOps) {
   OrtModelTestInfo test_info;
-  test_info.model_filename = ORT_TSTR("sklearn_bin_voting_classifier_soft.ort");
+  test_info.model_filename = ORT_TSTR("testdata/sklearn_bin_voting_classifier_soft.ort");
   test_info.logid = "LoadOrtFormatModelMLOps";
 
   OrtValue ml_value;
