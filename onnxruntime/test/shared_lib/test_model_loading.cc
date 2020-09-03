@@ -48,11 +48,12 @@ TEST(CApiTest, model_from_array) {
   };
 
   Ort::SessionOptions so;
+  create_session(so);
 
 #ifdef USE_CUDA
   // test with CUDA provider when using onnxruntime as dll
   Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(so, 0));
-  Ort::Session session_cuda(*ort_env.get(), buffer.data(), buffer.size(), so);
+  create_session(so);
 #endif
 }
 #endif
