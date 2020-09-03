@@ -158,11 +158,14 @@ struct OrtModelTestInfo {
   NameMLValMap inputs;
   std::vector<std::string> output_names;
   std::function<void(const std::vector<OrtValue>&)> output_verifier;
+  std::vector<std::pair<std::string, std::string>> configs;
 };
 
 void RunOrtModel(const OrtModelTestInfo& test_info) {
   SessionOptions so;
   so.session_logid = test_info.logid;
+  for (const auto& config : test_info.configs)
+    so.AddConfigEntry(config.first.c_str(), config.second.c_str());
 
   InferenceSessionGetGraphWrapper session_object{so, GetEnvironment()};
   ASSERT_STATUS_OK(session_object.Load(test_info.model_filename));  // infer type from filename
@@ -173,19 +176,16 @@ void RunOrtModel(const OrtModelTestInfo& test_info) {
   test_info.output_verifier(fetches);
 }
 
-#if !defined(ORT_MINIMAL_BUILD)
-TEST(OrtModelOnlyTests, SerializeToOrtFormat) {
-  const auto output_file = ORT_TSTR("ort_github_issue_4031.onnx.ort");
+void SaveAndCompareModels(const std::string& onnx_file, const std::string& ort_file) {
   SessionOptions so;
   so.session_logid = "SerializeToOrtFormat";
-  so.optimized_model_filepath = output_file;
+  so.optimized_model_filepath = ort_file;
   // not strictly necessary - type should be inferred from the filename
   so.AddConfigEntry(ORT_SESSION_OPTIONS_CONFIG_SAVE_MODEL_FORMAT, "ORT");
-
   InferenceSessionGetGraphWrapper session_object{so, GetEnvironment()};
 
   // create .ort file during Initialize due to values in SessionOptions
-  ASSERT_STATUS_OK(session_object.Load(ORT_TSTR("testdata/ort_github_issue_4031.onnx")));
+  ASSERT_STATUS_OK(session_object.Load(onnx_file));
   ASSERT_STATUS_OK(session_object.Initialize());
 
   SessionOptions so2;
@@ -196,35 +196,77 @@ TEST(OrtModelOnlyTests, SerializeToOrtFormat) {
 
   // load serialized version
   InferenceSessionGetGraphWrapper session_object2{so2, GetEnvironment()};
-  ASSERT_STATUS_OK(session_object2.Load(output_file));
+  ASSERT_STATUS_OK(session_object2.Load(ort_file));
   ASSERT_STATUS_OK(session_object2.Initialize());
 
   CompareGraphAndSessionState(session_object, session_object2);
+}
 
-  // create inputs
+#if !defined(ORT_MINIMAL_BUILD)
+TEST(OrtModelOnlyTests, SerializeToOrtFormat) {
+  const std::string ort_file = "ort_github_issue_4031.onnx.ort";
+  SaveAndCompareModels("ort_github_issue_4031.onnx", ort_file);
+
+  OrtModelTestInfo test_info;
+  test_info.model_filename = ort_file;
+  test_info.logid = "SerializeToOrtFormat";
+  test_info.configs.push_back(std::make_pair(ORT_SESSION_OPTIONS_CONFIG_LOAD_MODEL_FORMAT, "ORT"));
+
   OrtValue ml_value;
   CreateMLValue<float>(TestCPUExecutionProvider()->GetAllocator(0, OrtMemTypeDefault), {1}, {123.f},
                        &ml_value);
-  NameMLValMap feeds;
-  feeds.insert(std::make_pair("state_var_in", ml_value));
+  test_info.inputs.insert(std::make_pair("state_var_in", ml_value));
 
   // prepare outputs
-  std::vector<std::string> output_names{"state_var_out"};
-  std::vector<OrtValue> fetches;
-  std::vector<OrtValue> fetches2;
-  ASSERT_STATUS_OK(session_object.Run(feeds, output_names, &fetches));
-  ASSERT_STATUS_OK(session_object2.Run(feeds, output_names, &fetches2));
+  test_info.output_names = {"state_var_out"};
+  test_info.output_verifier = [](const std::vector<OrtValue>& fetches) {
+    const auto& output = fetches[0].Get<Tensor>();
+    ASSERT_TRUE(output.Shape().Size() == 1);
+    ASSERT_TRUE(output.Data<float>()[0] == 125.f);
+  };
 
-  // compare contents on Graph instances
-  // check results match
+  RunOrtModel(test_info);
+}
 
-  const auto& output = fetches[0].Get<Tensor>();
-  ASSERT_TRUE(output.Shape().Size() == 1);
-  ASSERT_TRUE(output.Data<float>()[0] == 125.f);
+TEST(OrtModelOnlyTests, SerializeToOrtFormatMLOps) {
+  const std::string ort_file = "sklearn_bin_voting_classifier_soft.ort";
+  SaveAndCompareModels("sklearn_bin_voting_classifier_soft.onnx", ort_file);
 
-  const auto& output2 = fetches2[0].Get<Tensor>();
-  ASSERT_TRUE(output2.Shape().Size() == 1);
-  ASSERT_TRUE(output2.Data<float>()[0] == 125.f);
+  OrtModelTestInfo test_info;
+  test_info.model_filename = ort_file;
+  test_info.logid = "SerializeToOrtFormatMLOps";
+  test_info.configs.push_back(std::make_pair(ORT_SESSION_OPTIONS_CONFIG_LOAD_MODEL_FORMAT, "ORT"));
+
+  OrtValue ml_value;
+  CreateMLValue<float>(TestCPUExecutionProvider()->GetAllocator(0, OrtMemTypeDefault), {3, 2},
+                       {0.f, 1.f, 1.f, 1.f, 2.f, 0.f}, &ml_value);
+  test_info.inputs.insert(std::make_pair("input", ml_value));
+
+  // prepare outputs
+  test_info.output_names = {"output_label", "output_probability"};
+  test_info.output_verifier = [](const std::vector<OrtValue>& fetches) {
+    const auto& output_0 = fetches[0].Get<Tensor>();
+    int64_t tensor_size = 3;
+    ASSERT_EQ(tensor_size, output_0.Shape().Size());
+    const auto& output_0_data = output_0.Data<std::string>();
+    for (int64_t i = 0; i < tensor_size; i++)
+      ASSERT_TRUE(output_0_data[i] == "A");
+
+    VectorMapStringToFloat expected_output_1 = {{{"A", 0.572734f}, {"B", 0.427266f}},
+                                                {{"A", 0.596016f}, {"B", 0.403984f}},
+                                                {{"A", 0.656315f}, {"B", 0.343685f}}};
+    const auto& actual_output_1 = fetches[1].Get<VectorMapStringToFloat>();
+    ASSERT_EQ(actual_output_1.size(), 3);
+    for (size_t i = 0; i < 3; i++) {
+      const auto& expected = expected_output_1[i];
+      const auto& actual = actual_output_1[i];
+      ASSERT_EQ(actual.size(), 2);
+      ASSERT_NEAR(expected.at("A"), actual.at("A"), 1e-6);
+      ASSERT_NEAR(expected.at("B"), actual.at("B"), 1e-6);
+    }
+  };
+
+  RunOrtModel(test_info);
 }
 #endif
 
