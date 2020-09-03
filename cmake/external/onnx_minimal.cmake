@@ -9,7 +9,10 @@ add_library(onnx_proto ${ONNX_SOURCE_ROOT}/onnx/onnx-ml.proto ${ONNX_SOURCE_ROOT
 
 target_include_directories(onnx_proto PUBLIC $<TARGET_PROPERTY:protobuf::libprotobuf,INTERFACE_INCLUDE_DIRECTORIES> "${CMAKE_CURRENT_BINARY_DIR}")
 target_compile_definitions(onnx_proto PUBLIC $<TARGET_PROPERTY:protobuf::libprotobuf,INTERFACE_COMPILE_DEFINITIONS>)
-onnxruntime_protobuf_generate(APPEND_PATH IMPORT_DIRS ${ONNX_SOURCE_ROOT}/onnx TARGET onnx_proto)
+
+set(_src_prefix "onnx/")
+onnxruntime_protobuf_generate(NO_SRC_INCLUDES GEN_SRC_PREFIX ${_src_prefix} IMPORT_DIRS ${ONNX_SOURCE_ROOT} TARGET onnx_proto)
+
 if (WIN32)
   target_compile_options(onnx_proto PRIVATE "/wd4146" "/wd4125" "/wd4456" "/wd4267" "/wd4309")
 else()
@@ -70,6 +73,16 @@ if (WIN32)
         /EHsc   # exception handling - C++ may throw, extern "C" will not
         /wd4996 # 'argument' Using double parameter version instead of single parameter version of SetTotalBytesLimit(). The second parameter is ignored.
     )
+    if (NOT onnxruntime_DISABLE_EXCEPTIONS)
+      target_compile_options(onnx PRIVATE
+          /EHsc   # exception handling - C++ may throw, extern "C" will not
+      )
+    endif()
+    
+    target_compile_options(onnx_proto PRIVATE
+        /wd4244 # 'argument' conversion from 'google::protobuf::int64' to 'int', possible loss of data
+    )
+
     set(onnx_static_library_flags
         -IGNORE:4221 # LNK4221: This object file does not define any previously undefined public symbols, so it will not be used by any link operation that consumes this library
     )

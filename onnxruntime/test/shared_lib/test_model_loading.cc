@@ -16,6 +16,8 @@ extern std::unique_ptr<Ort::Env> ort_env;
 namespace onnxruntime {
 namespace test {
 
+// disable for minimal build with no exceptions as it will always attempt to throw in that scenario
+#if !defined(ORT_MINIMAL_BUILD) && !defined(ORT_NO_EXCEPTIONS)
 TEST(CApiTest, model_from_array) {
   const char* model_path = "testdata/matmul_1.onnx";
   std::vector<char> buffer;
@@ -34,6 +36,7 @@ TEST(CApiTest, model_from_array) {
 #else
   bool should_throw = true;
 #endif
+
   auto create_session = [&](Ort::SessionOptions& so) {
     try {
       Ort::Session session(*ort_env.get(), buffer.data(), buffer.size(), so);
@@ -52,5 +55,6 @@ TEST(CApiTest, model_from_array) {
   Ort::Session session_cuda(*ort_env.get(), buffer.data(), buffer.size(), so);
 #endif
 }
+#endif
 }  // namespace test
 }  // namespace onnxruntime
