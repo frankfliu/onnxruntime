@@ -229,7 +229,7 @@ TEST(OrtModelOnlyTests, SerializeToOrtFormat) {
 }
 
 TEST(OrtModelOnlyTests, SerializeToOrtFormatMLOps) {
-  const std::basic_string<ORTCHAR_T> ort_file = ORT_TSTR("testdata/sklearn_bin_voting_classifier_soft.ort");
+  const std::basic_string<ORTCHAR_T> ort_file = ORT_TSTR("testdata/sklearn_bin_voting_classifier_soft_converted.ort");
   SaveAndCompareModels("testdata/sklearn_bin_voting_classifier_soft.onnx", ort_file);
 
   OrtModelTestInfo test_info;
