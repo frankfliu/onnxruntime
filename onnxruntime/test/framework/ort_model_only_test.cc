@@ -153,7 +153,7 @@ void CompareGraphAndSessionState(const InferenceSessionGetGraphWrapper& session_
 }
 
 struct OrtModelTestInfo {
-  std::string model_filename;
+  std::basic_string<ORTCHAR_T> model_filename;
   std::string logid;
   NameMLValMap inputs;
   std::vector<std::string> output_names;
@@ -176,7 +176,7 @@ void RunOrtModel(const OrtModelTestInfo& test_info) {
   test_info.output_verifier(fetches);
 }
 
-void SaveAndCompareModels(const std::string& onnx_file, const std::string& ort_file) {
+void SaveAndCompareModels(const std::string& onnx_file, const std::basic_string<ORTCHAR_T>& ort_file) {
   SessionOptions so;
   so.session_logid = "SerializeToOrtFormat";
   so.optimized_model_filepath = ort_file;
@@ -204,7 +204,7 @@ void SaveAndCompareModels(const std::string& onnx_file, const std::string& ort_f
 
 #if !defined(ORT_MINIMAL_BUILD)
 TEST(OrtModelOnlyTests, SerializeToOrtFormat) {
-  const std::string ort_file = "ort_github_issue_4031.onnx.ort";
+  const std::basic_string<ORTCHAR_T> ort_file = ORT_TSTR("ort_github_issue_4031.onnx.ort");
   SaveAndCompareModels("ort_github_issue_4031.onnx", ort_file);
 
   OrtModelTestInfo test_info;
@@ -229,7 +229,7 @@ TEST(OrtModelOnlyTests, SerializeToOrtFormat) {
 }
 
 TEST(OrtModelOnlyTests, SerializeToOrtFormatMLOps) {
-  const std::string ort_file = "sklearn_bin_voting_classifier_soft.ort";
+  const std::basic_string<ORTCHAR_T> ort_file = ORT_TSTR("sklearn_bin_voting_classifier_soft.ort");
   SaveAndCompareModels("sklearn_bin_voting_classifier_soft.onnx", ort_file);
 
   OrtModelTestInfo test_info;
@@ -273,7 +273,7 @@ TEST(OrtModelOnlyTests, SerializeToOrtFormatMLOps) {
 // test that we can deserialize and run a previously saved ORT format model
 TEST(OrtModelOnlyTests, LoadOrtFormatModel) {
   OrtModelTestInfo test_info;
-  test_info.model_filename = "ort_github_issue_4031.onnx.ort";
+  test_info.model_filename = ORT_TSTR("ort_github_issue_4031.onnx.ort");
   test_info.logid = "LoadOrtFormatModel";
 
   OrtValue ml_value;
@@ -296,7 +296,7 @@ TEST(OrtModelOnlyTests, LoadOrtFormatModel) {
 // for a model with sequence and map outputs
 TEST(OrtModelOnlyTests, LoadOrtFormatModelMLOps) {
   OrtModelTestInfo test_info;
-  test_info.model_filename = "sklearn_bin_voting_classifier_soft.ort";
+  test_info.model_filename = ORT_TSTR("sklearn_bin_voting_classifier_soft.ort");
   test_info.logid = "LoadOrtFormatModelMLOps";
 
   OrtValue ml_value;
