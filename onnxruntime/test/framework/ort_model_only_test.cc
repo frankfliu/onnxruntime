@@ -55,37 +55,48 @@ static void CompareTensors(const OrtValue& left_value, const OrtValue& right_val
   }
 }
 
+static void CompareTypeProtos(const TypeProto& left_type_proto, const TypeProto& right_type_proto) {
+  ASSERT_EQ(left_type_proto.denotation(), right_type_proto.denotation());
+
+  ASSERT_EQ(left_type_proto.has_tensor_type(), right_type_proto.has_tensor_type());
+  ASSERT_EQ(left_type_proto.has_sequence_type(), right_type_proto.has_sequence_type());
+  ASSERT_EQ(left_type_proto.has_map_type(), right_type_proto.has_map_type());
+
+  if (left_type_proto.has_tensor_type()) {
+    const auto& left_tensor_type = left_type_proto.tensor_type();
+    const auto& right_tensor_type = right_type_proto.tensor_type();
+
+    ASSERT_EQ(left_tensor_type.elem_type(), right_tensor_type.elem_type());
+
+    const auto& left_shape = left_tensor_type.shape();
+    const auto& right_shape = right_tensor_type.shape();
+
+    ASSERT_EQ(left_shape.dim_size(), right_shape.dim_size());
+    for (int i = 0; i < left_shape.dim_size(); i++) {
+      const auto& left_dim = left_shape.dim(i);
+      const auto& right_dim = right_shape.dim(i);
+      ASSERT_EQ(left_dim.has_dim_value(), right_dim.has_dim_value());
+      ASSERT_EQ(left_dim.dim_value(), right_dim.dim_value());
+      ASSERT_EQ(left_dim.has_dim_param(), right_dim.has_dim_param());
+      ASSERT_EQ(left_dim.dim_param(), right_dim.dim_param());
+    }
+  } else if (left_type_proto.has_sequence_type()) {
+    CompareTypeProtos(left_type_proto.sequence_type().elem_type(), right_type_proto.sequence_type().elem_type());
+  } else if (left_type_proto.has_map_type()) {
+    const auto& left_map = left_type_proto.map_type();
+    const auto& right_map = right_type_proto.map_type();
+    ASSERT_EQ(left_map.key_type(), right_map.key_type());
+    CompareTypeProtos(left_map.value_type(), right_map.value_type());
+  } else {
+    FAIL();  // We do not support SparseTensor and Opaque for now
+  }
+}
+
 static void CompareValueInfos(const ValueInfoProto& left, const ValueInfoProto& right) {
   ASSERT_EQ(left.name(), right.name());
   ASSERT_EQ(left.doc_string(), right.doc_string());
 
-  std::string left_data;
-  std::string right_data;
-
-  const auto& left_type_proto = left.type();
-  const auto& right_type_proto = right.type();
-
-  ASSERT_EQ(left_type_proto.denotation(), right_type_proto.denotation());
-  ASSERT_TRUE(left_type_proto.has_tensor_type());
-  ASSERT_TRUE(right_type_proto.has_tensor_type());
-
-  const auto& left_tensor_type = left_type_proto.tensor_type();
-  const auto& right_tensor_type = right_type_proto.tensor_type();
-
-  ASSERT_EQ(left_tensor_type.elem_type(), right_tensor_type.elem_type());
-
-  const auto& left_shape = left_tensor_type.shape();
-  const auto& right_shape = right_tensor_type.shape();
-
-  ASSERT_EQ(left_shape.dim_size(), right_shape.dim_size());
-  for (int i = 0; i < left_shape.dim_size(); i++) {
-    const auto& left_dim = left_shape.dim(i);
-    const auto& right_dim = right_shape.dim(i);
-    ASSERT_EQ(left_dim.has_dim_value(), right_dim.has_dim_value());
-    ASSERT_EQ(left_dim.dim_value(), right_dim.dim_value());
-    ASSERT_EQ(left_dim.has_dim_param(), right_dim.has_dim_param());
-    ASSERT_EQ(left_dim.dim_param(), right_dim.dim_param());
-  }
+  CompareTypeProtos(left.type(), right.type());
 }
 
 #if !defined(ORT_MINIMAL_BUILD)
