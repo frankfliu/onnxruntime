@@ -99,6 +99,27 @@ static void CompareValueInfos(const ValueInfoProto& left, const ValueInfoProto& 
   CompareTypeProtos(left.type(), right.type());
 }
 
+struct OrtModelTestInfo {
+  std::string model_filename;
+  std::string logid;
+  NameMLValMap inputs;
+  std::vector<std::string> output_names;
+  std::vector<OrtValue> output_values;
+  std::function<void(const std::vector<OrtValue>&)> output_verifier;
+};
+
+void RunOrtModel(const OrtModelTestInfo& test_info) {
+  SessionOptions so;
+  so.session_logid = test_info.logid;
+  InferenceSessionGetGraphWrapper session_object{so, GetEnvironment()};
+  ASSERT_STATUS_OK(session_object.Load(test_info.model_filename));  // infer type from filename
+  ASSERT_STATUS_OK(session_object.Initialize());
+
+  std::vector<OrtValue> fetches;
+  ASSERT_STATUS_OK(session_object.Run(test_info.inputs, test_info.output_names, &fetches));
+  test_info.output_verifier(fetches);
+}
+
 #if !defined(ORT_MINIMAL_BUILD)
 TEST(OrtModelOnlyTests, SerializeToOrtFormat) {
   const auto output_file = ORT_TSTR("ort_github_issue_4031.onnx.ort");
@@ -205,73 +226,63 @@ TEST(OrtModelOnlyTests, SerializeToOrtFormat) {
 
 // test that we can deserialize and run a previously saved ORT format model
 TEST(OrtModelOnlyTests, LoadOrtFormatModel) {
-  const auto model_filename = ORT_TSTR("ort_github_issue_4031.onnx.ort");
-  SessionOptions so;
-  so.session_logid = "LoadOrtFormatModel";
-
-  InferenceSessionGetGraphWrapper session_object{so, GetEnvironment()};
-  ASSERT_STATUS_OK(session_object.Load(model_filename));  // infer type from filename
-  ASSERT_STATUS_OK(session_object.Initialize());
+  OrtModelTestInfo test_info;
+  test_info.model_filename = "ort_github_issue_4031.onnx.ort";
+  test_info.logid = "LoadOrtFormatModel";
 
   OrtValue ml_value;
   CreateMLValue<float>(TestCPUExecutionProvider()->GetAllocator(0, OrtMemTypeDefault), {1}, {123.f},
                        &ml_value);
-  NameMLValMap feeds;
-  feeds.insert(std::make_pair("state_var_in", ml_value));
+  test_info.inputs.insert(std::make_pair("state_var_in", ml_value));
 
   // prepare outputs
-  std::vector<std::string> output_names{"state_var_out"};
-  std::vector<OrtValue> fetches;
+  test_info.output_names = {"state_var_out"};
+  test_info.output_verifier = [](const std::vector<OrtValue>& fetches) {
+    const auto& output = fetches[0].Get<Tensor>();
+    ASSERT_TRUE(output.Shape().Size() == 1);
+    ASSERT_TRUE(output.Data<float>()[0] == 125.f);
+  };
 
-  ASSERT_STATUS_OK(session_object.Run(feeds, output_names, &fetches));
-
-  const auto& output = fetches[0].Get<Tensor>();
-  ASSERT_TRUE(output.Shape().Size() == 1);
-  ASSERT_TRUE(output.Data<float>()[0] == 125.f);
+  RunOrtModel(test_info);
 }
 
 // test that we can deserialize and run a previously saved ORT format model
 // for a model with sequence and map outputs
 TEST(OrtModelOnlyTests, LoadOrtFormatModelMLOps) {
-  const auto model_filename = ORT_TSTR("sklearn_bin_voting_classifier_soft.ort");
-  SessionOptions so;
-  so.session_logid = "LoadOrtFormatModelMLOps";
-
-  InferenceSessionGetGraphWrapper session_object{so, GetEnvironment()};
-  ASSERT_STATUS_OK(session_object.Load(model_filename));  // infer type from filename
-  ASSERT_STATUS_OK(session_object.Initialize());
+  OrtModelTestInfo test_info;
+  test_info.model_filename = "sklearn_bin_voting_classifier_soft.ort";
+  test_info.logid = "LoadOrtFormatModelMLOps";
 
   OrtValue ml_value;
   CreateMLValue<float>(TestCPUExecutionProvider()->GetAllocator(0, OrtMemTypeDefault), {3, 2},
                        {0.f, 1.f, 1.f, 1.f, 2.f, 0.f}, &ml_value);
-  NameMLValMap feeds;
-  feeds.insert(std::make_pair("input", ml_value));
+  test_info.inputs.insert(std::make_pair("input", ml_value));
 
   // prepare outputs
-  std::vector<std::string> output_names{"output_label", "output_probability"};
-  std::vector<OrtValue> fetches;
+  test_info.output_names = {"output_label", "output_probability"};
+  test_info.output_verifier = [](const std::vector<OrtValue>& fetches) {
+    const auto& output_0 = fetches[0].Get<Tensor>();
+    int64_t tensor_size = 3;
+    ASSERT_EQ(tensor_size, output_0.Shape().Size());
+    const auto& output_0_data = output_0.Data<std::string>();
+    for (int64_t i = 0; i < tensor_size; i++)
+      ASSERT_TRUE(output_0_data[i] == "A");
 
-  ASSERT_STATUS_OK(session_object.Run(feeds, output_names, &fetches));
+    VectorMapStringToFloat expected_output_1 = {{{"A", 0.572734f}, {"B", 0.427266f}},
+                                                {{"A", 0.596016f}, {"B", 0.403984f}},
+                                                {{"A", 0.656315f}, {"B", 0.343685f}}};
+    const auto& actual_output_1 = fetches[1].Get<VectorMapStringToFloat>();
+    ASSERT_EQ(actual_output_1.size(), 3);
+    for (size_t i = 0; i < 3; i++) {
+      const auto& expected = expected_output_1[i];
+      const auto& actual = actual_output_1[i];
+      ASSERT_EQ(actual.size(), 2);
+      ASSERT_NEAR(expected.at("A"), actual.at("A"), 1e-6);
+      ASSERT_NEAR(expected.at("B"), actual.at("B"), 1e-6);
+    }
+  };
 
-  const auto& output_0 = fetches[0].Get<Tensor>();
-  int64_t tensor_size = 3;
-  ASSERT_EQ(tensor_size, output_0.Shape().Size());
-  const auto& output_0_data = output_0.Data<std::string>();
-  for (int64_t i = 0; i < tensor_size; i++)
-    ASSERT_TRUE(output_0_data[i] == "A");
-
-  VectorMapStringToFloat expected_output_1 = {{{"A", 0.572734f}, {"B", 0.427266f}},
-                                              {{"A", 0.596016f}, {"B", 0.403984f}},
-                                              {{"A", 0.656315f}, {"B", 0.343685f}}};
-  const auto& actual_output_1 = fetches[1].Get<VectorMapStringToFloat>();
-  ASSERT_EQ(actual_output_1.size(), 3);
-  for (size_t i = 0; i < 3; i++) {
-    const auto& expected = expected_output_1[i];
-    const auto& actual = actual_output_1[i];
-    ASSERT_EQ(actual.size(), 2);
-    ASSERT_NEAR(expected.at("A"), actual.at("A"), 1e-6);
-    ASSERT_NEAR(expected.at("B"), actual.at("B"), 1e-6);
-  }
+  RunOrtModel(test_info);
 }
 
 }  // namespace test
