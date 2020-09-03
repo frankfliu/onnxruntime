@@ -220,6 +220,7 @@ TEST(OrtModelOnlyTests, LoadOrtFormatModel) {
 }
 
 // test that we can deserialize and run a previously saved ORT format model
+// for a model with sequence and map outputs
 TEST(OrtModelOnlyTests, LoadOrtFormatModelMLOps) {
   const auto model_filename = ORT_TSTR("sklearn_bin_voting_classifier_soft.ort");
   SessionOptions so;
@@ -241,14 +242,25 @@ TEST(OrtModelOnlyTests, LoadOrtFormatModelMLOps) {
 
   ASSERT_STATUS_OK(session_object.Run(feeds, output_names, &fetches));
 
-  const auto& output_1 = fetches[0].Get<Tensor>();
+  const auto& output_0 = fetches[0].Get<Tensor>();
   int64_t tensor_size = 3;
-  ASSERT_EQ( tensor_size, output_1.Shape().Size() );
-  const auto& output_1_data = output_1.Data<std::string>();
+  ASSERT_EQ(tensor_size, output_0.Shape().Size());
+  const auto& output_0_data = output_0.Data<std::string>();
   for (int64_t i = 0; i < tensor_size; i++)
-    ASSERT_TRUE(output_1_data[i] == "A");
+    ASSERT_TRUE(output_0_data[i] == "A");
 
-  // TODO verify the sequence outputs
+  VectorMapStringToFloat expected_output_1 = {{{"A", 0.572734f}, {"B", 0.427266f}},
+                                              {{"A", 0.596016f}, {"B", 0.403984f}},
+                                              {{"A", 0.656315f}, {"B", 0.343685f}}};
+  const auto& actual_output_1 = fetches[1].Get<VectorMapStringToFloat>();
+  ASSERT_EQ(actual_output_1.size(), 3);
+  for (size_t i = 0; i < 3; i++) {
+    const auto& expected = expected_output_1[i];
+    const auto& actual = actual_output_1[i];
+    ASSERT_EQ(actual.size(), 2);
+    ASSERT_NEAR(expected.at("A"), actual.at("A"), 1e-6);
+    ASSERT_NEAR(expected.at("B"), actual.at("B"), 1e-6);
+  }
 }
 
 }  // namespace test
