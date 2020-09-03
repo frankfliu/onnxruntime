@@ -52,7 +52,7 @@ class KernelDef {
     return provider_type_;
   }
 
-  const std::unordered_map<std::string, std::vector<MLDataType>>& TypeConstraints() const {
+  const std::map<std::string, std::vector<MLDataType>>& TypeConstraints() const {
     return type_constraints_;
   }
 
@@ -143,7 +143,8 @@ class KernelDef {
 
   // The supported data types for inputs/outputs.
   // Key is input/output name defined in op schema, Value are supported types.
-  std::unordered_map<std::string, std::vector<MLDataType>> type_constraints_;
+  // note: std::map as we need the order to be deterministic for the hash
+  std::map<std::string, std::vector<MLDataType>> type_constraints_;
 
   // An element <i, j> means that output j reuses the memory of input i.
   std::vector<std::pair<int, int>> inplace_map_;
