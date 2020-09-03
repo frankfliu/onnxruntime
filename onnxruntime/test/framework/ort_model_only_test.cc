@@ -23,11 +23,11 @@ class InferenceSessionGetGraphWrapper : public InferenceSession {
                                            const Environment& env) : InferenceSession(session_options, env) {
   }
 
-  const Graph& GetGraph() {
+  const Graph& GetGraph() const {
     return model_->MainGraph();
   }
 
-  const SessionState& GetSessionState() {
+  const SessionState& GetSessionState() const {
     return InferenceSession::GetSessionState();
   }
 };
@@ -99,18 +99,71 @@ static void CompareValueInfos(const ValueInfoProto& left, const ValueInfoProto& 
   CompareTypeProtos(left.type(), right.type());
 }
 
+void CompareGraphAndSessionState(const InferenceSessionGetGraphWrapper& session_object_1,
+                                 const InferenceSessionGetGraphWrapper& session_object_2) {
+  const auto& graph_1 = session_object_1.GetGraph();
+  const auto& graph_2 = session_object_2.GetGraph();
+
+  const auto& session_state_1 = session_object_1.GetSessionState();
+  const auto& session_state_2 = session_object_2.GetSessionState();
+
+  const auto& i1 = session_state_1.GetInitializedTensors();
+  const auto& i2 = session_state_2.GetInitializedTensors();
+  ASSERT_EQ(i1.size(), i2.size());
+
+  for (const auto& pair : i1) {
+    auto iter = i2.find(pair.first);
+    ASSERT_NE(iter, i2.cend());
+
+    const OrtValue& left = pair.second;
+    const OrtValue& right = iter->second;
+    CompareTensors(left, right);
+  }
+
+  // check all node args are fine
+  for (const auto& input : graph_1.GetInputsIncludingInitializers()) {
+    const auto& left = *graph_1.GetNodeArg(input->Name());
+    const auto* right = graph_2.GetNodeArg(input->Name());
+    ASSERT_TRUE(right != nullptr);
+
+    const auto& left_proto = left.ToProto();
+    const auto& right_proto = right->ToProto();
+    CompareValueInfos(left_proto, right_proto);
+  }
+
+  for (const auto& left : graph_1.Nodes()) {
+    const auto* right = graph_2.GetNode(left.Index());
+    ASSERT_TRUE(right != nullptr);
+    const auto& left_outputs = left.OutputDefs();
+    const auto& right_outputs = right->OutputDefs();
+    ASSERT_EQ(left_outputs.size(), right_outputs.size());
+
+    for (size_t i = 0, end = left_outputs.size(); i < end; ++i) {
+      const auto& left_nodearg = *left_outputs[i];
+      const auto& right_nodearg = *right_outputs[i];
+
+      if (left_nodearg.Exists()) {
+        EXPECT_EQ(left_nodearg.Name(), right_nodearg.Name());
+        CompareValueInfos(left_nodearg.ToProto(), right_nodearg.ToProto());
+      } else {
+        EXPECT_FALSE(right_nodearg.Exists());
+      }
+    }
+  }
+}
+
 struct OrtModelTestInfo {
   std::string model_filename;
   std::string logid;
   NameMLValMap inputs;
   std::vector<std::string> output_names;
-  std::vector<OrtValue> output_values;
   std::function<void(const std::vector<OrtValue>&)> output_verifier;
 };
 
 void RunOrtModel(const OrtModelTestInfo& test_info) {
   SessionOptions so;
   so.session_logid = test_info.logid;
+
   InferenceSessionGetGraphWrapper session_object{so, GetEnvironment()};
   ASSERT_STATUS_OK(session_object.Load(test_info.model_filename));  // infer type from filename
   ASSERT_STATUS_OK(session_object.Initialize());
@@ -135,6 +188,19 @@ TEST(OrtModelOnlyTests, SerializeToOrtFormat) {
   ASSERT_STATUS_OK(session_object.Load(ORT_TSTR("testdata/ort_github_issue_4031.onnx")));
   ASSERT_STATUS_OK(session_object.Initialize());
 
+  SessionOptions so2;
+  so2.session_logid = "LoadOrtFormat";
+  // not strictly necessary - type should be inferred from the filename, but to be sure we're testing what we
+  // think we're testing set it.
+  so2.AddConfigEntry(ORT_SESSION_OPTIONS_CONFIG_LOAD_MODEL_FORMAT, "ORT");
+
+  // load serialized version
+  InferenceSessionGetGraphWrapper session_object2{so2, GetEnvironment()};
+  ASSERT_STATUS_OK(session_object2.Load(output_file));
+  ASSERT_STATUS_OK(session_object2.Initialize());
+
+  CompareGraphAndSessionState(session_object, session_object2);
+
   // create inputs
   OrtValue ml_value;
   CreateMLValue<float>(TestCPUExecutionProvider()->GetAllocator(0, OrtMemTypeDefault), {1}, {123.f},
@@ -145,74 +211,12 @@ TEST(OrtModelOnlyTests, SerializeToOrtFormat) {
   // prepare outputs
   std::vector<std::string> output_names{"state_var_out"};
   std::vector<OrtValue> fetches;
-
+  std::vector<OrtValue> fetches2;
   ASSERT_STATUS_OK(session_object.Run(feeds, output_names, &fetches));
-
-  SessionOptions so2;
-  so.session_logid = "LoadOrtFormat";
-  // not strictly necessary - type should be inferred from the filename, but to be sure we're testing what we
-  // think we're testing set it.
-  so.AddConfigEntry(ORT_SESSION_OPTIONS_CONFIG_LOAD_MODEL_FORMAT, "ORT");
-
-  // load serialized version
-  InferenceSessionGetGraphWrapper session_object2{so2, GetEnvironment()};
-  ASSERT_STATUS_OK(session_object2.Load(output_file));
-  ASSERT_STATUS_OK(session_object2.Initialize());
+  ASSERT_STATUS_OK(session_object2.Run(feeds, output_names, &fetches2));
 
   // compare contents on Graph instances
-  const auto& graph = session_object.GetGraph();
-  const auto& graph2 = session_object2.GetGraph();
-
-  const auto& session_state = session_object.GetSessionState();
-  const auto& session_state2 = session_object2.GetSessionState();
-
-  const auto& i1 = session_state.GetInitializedTensors();
-  const auto& i2 = session_state2.GetInitializedTensors();
-  ASSERT_EQ(i1.size(), i2.size());
-
-  for (const auto& pair : i1) {
-    auto iter = i2.find(pair.first);
-    ASSERT_NE(iter, i2.cend());
-
-    const OrtValue& left = pair.second;
-    const OrtValue& right = iter->second;
-    CompareTensors(left, right);
-  }
-
-  // check all node args are fine
-  for (const auto& input : graph.GetInputsIncludingInitializers()) {
-    const auto& left = *graph.GetNodeArg(input->Name());
-    const auto* right = graph2.GetNodeArg(input->Name());
-    ASSERT_TRUE(right != nullptr);
-
-    const auto& left_proto = left.ToProto();
-    const auto& right_proto = right->ToProto();
-    CompareValueInfos(left_proto, right_proto);
-  }
-
-  for (const auto& left : graph.Nodes()) {
-    const auto* right = graph2.GetNode(left.Index());
-    ASSERT_TRUE(right != nullptr);
-    const auto& left_outputs = left.OutputDefs();
-    const auto& right_outputs = right->OutputDefs();
-    ASSERT_EQ(left_outputs.size(), right_outputs.size());
-
-    for (size_t i = 0, end = left_outputs.size(); i < end; ++i) {
-      const auto& left_nodearg = *left_outputs[i];
-      const auto& right_nodearg = *right_outputs[i];
-
-      if (left_nodearg.Exists()) {
-        EXPECT_EQ(left_nodearg.Name(), right_nodearg.Name());
-        CompareValueInfos(left_nodearg.ToProto(), right_nodearg.ToProto());
-      } else {
-        EXPECT_FALSE(right_nodearg.Exists());
-      }
-    }
-  }
-
   // check results match
-  std::vector<OrtValue> fetches2;
-  ASSERT_STATUS_OK(session_object2.Run(feeds, output_names, &fetches2));
 
   const auto& output = fetches[0].Get<Tensor>();
   ASSERT_TRUE(output.Shape().Size() == 1);
