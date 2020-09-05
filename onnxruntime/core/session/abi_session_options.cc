@@ -188,7 +188,7 @@ ORT_API_STATUS_IMPL(OrtApis::AddSessionConfigEntry, _Inout_ OrtSessionOptions* o
 ORT_API_STATUS_IMPL(OrtApis::AddInitializer, _Inout_ OrtSessionOptions* options, _In_ const char* name_str,
                     _In_ OrtValue* val) {
   if (!val) {
-    return onnxruntime::ToOrtStatus(ORT_INVALID_ARGUMENT, "Received nullptr for OrtValue");
+    return OrtApis::CreateStatus(ORT_INVALID_ARGUMENT, "Received nullptr for OrtValue");
   }
   std::string name(name_str);
   auto it = options->value.initializers_to_share_map.find(name);
